@@ -58,6 +58,15 @@ services:
       - "3000:3000" # Angular dev server — preview entry point
       - "9000:9000" # PeerTube server — REST API, ActivityPub, feeds
     working_dir: /app
+    extra_hosts:
+      # `webserver.hostname` below is the public preview host, and the embed dev
+      # server (`vite -c src/standalone/videos/vite.config.mjs`) binds that
+      # hostname and proxies to it on :5173. Resolve it to loopback inside the
+      # container so that server can bind (otherwise `vite` dies with
+      # EADDRNOTAVAIL, which `concurrently -k` turns into a full stack crash)
+      # and its self-proxy targets stay local. The browser still reaches the
+      # real public host through the platform proxy.
+      - '3000-${BASE44_PUBLIC_HOST_SUFFIX}:127.0.0.1'
     volumes:
       # The repo is bind-mounted so edits are visible to both dev servers.
       # pnpm's store intentionally stays next to node_modules (it lands in
@@ -75,7 +84,17 @@ services:
       # so the app reaches the compose services instead. `admin.email` is the
       # instance administrator address: it creates the root user on a first
       # install and receives the contact form messages.
-      - 'NODE_CONFIG={"database":{"hostname":"postgres"},"redis":{"hostname":"redis"},"admin":{"email":"joshuavazquez2004@gmail.com"}}'
+      #
+      # `webserver` is the instance's public identity: PeerTube builds absolute
+      # URLs from it for logos, favicons, the instance avatar/banner, thumbnails,
+      # HLS playlists and captions. The dev default (`http://localhost:9000`)
+      # points at the container, which the preview browser cannot reach — and the
+      # HTTPS preview page blocks it as mixed content — so those images and media
+      # silently fail. Point it at the preview origin instead: the Angular dev
+      # server proxies /client/assets, /static and /lazy-static to :9000, so these
+      # URLs stay same-origin. `https: true` + port 443 make PeerTube emit
+      # `https://<host>` with no port (see sanitizeUrl).
+      - 'NODE_CONFIG={"database":{"hostname":"postgres"},"redis":{"hostname":"redis"},"admin":{"email":"joshuavazquez2004@gmail.com"},"webserver":{"https":true,"hostname":"3000-${BASE44_PUBLIC_HOST_SUFFIX}","port":443}}'
     # Install from the current lockfile (root pnpm workspace covers client and
     # packages), then run the upstream dev command: `ng serve` on :3000 plus the
     # tsc-watch server build/run on :9000.

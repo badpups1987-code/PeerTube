@@ -413,3 +413,33 @@ Export to Jaeger (tracing) or Prometheus (metrics) is configurable in
   — Library / business-logic documentation
 - [SECURITY.md](SECURITY.md) — Vulnerability disclosure policy
 - [FAQ.md](FAQ.md) — Frequently asked questions
+
+## Base44 sandbox environment
+
+`docker-compose.base44.yml` runs the upstream dev stack (`ng serve` on :3000,
+`tsc-watch` server on :9000, Postgres + Redis) from the bind-mounted source.
+Start it with `docker compose -f docker-compose.base44.yml up -d --build`.
+Non-obvious couplings found while setting it up:
+
+- **`webserver` must be the instance's public origin, not `localhost:9000`.**
+  PeerTube builds *absolute* URLs from `WEBSERVER.URL` for instance logos,
+  favicon, avatar/banner, thumbnails, captions and HLS playlists. The dev
+  default points at the container, which the preview browser cannot reach (and
+  an `http://` URL is blocked on the HTTPS preview page), so the header logo and
+  every thumbnail silently fail. The compose `NODE_CONFIG` therefore sets
+  `webserver.hostname` to the preview host with `https: true` and port `443`;
+  `/client/assets`, `/static` and `/lazy-static` are proxied by the dev server,
+  so those URLs stay same-origin. Check with
+  `curl -s localhost:9000/api/v1/config | grep fileUrl`.
+- **`webserver.hostname` is also bound by the embed dev server.**
+  `client/src/standalone/videos/vite.config.mjs` uses it as `server.host` and as
+  its self-proxy target, so a public hostname makes `vite` die with
+  `EADDRNOTAVAIL`, and `concurrently -k` then kills the whole stack with a
+  `spawn ps ENOENT` red herring. Compose adds an `extra_hosts` entry resolving
+  that hostname to loopback inside the container.
+- **`/manifest.webmanifest` needs a dev-server proxy entry** in
+  `client/proxy.config.json`; it is a dynamic backend route, so without the
+  entry `ng serve` answers 404 and the PWA icons in the manifest never load.
+- The server build runs once, sequentially, before `npm run dev`: concurrent
+  `tsc`/Angular/vite builds on the bind mount have emitted truncated (0-byte)
+  files and crashed the server on startup.
