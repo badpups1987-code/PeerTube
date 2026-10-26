@@ -72,8 +72,10 @@ services:
       # the browser also connects to the public preview host, so both are added.
       - '__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=.${BASE44_SANDBOX_HOST_DOMAIN},3000-${BASE44_PUBLIC_HOST_SUFFIX}'
       # config/dev.yaml points at 127.0.0.1: node-config merges this JSON last,
-      # so the app reaches the compose services instead.
-      - 'NODE_CONFIG={"database":{"hostname":"postgres"},"redis":{"hostname":"redis"}}'
+      # so the app reaches the compose services instead. `admin.email` is the
+      # instance administrator address: it creates the root user on a first
+      # install and receives the contact form messages.
+      - 'NODE_CONFIG={"database":{"hostname":"postgres"},"redis":{"hostname":"redis"},"admin":{"email":"joshuavazquez2004@gmail.com"}}'
     # Install from the current lockfile (root pnpm workspace covers client and
     # packages), then run the upstream dev command: `ng serve` on :3000 plus the
     # tsc-watch server build/run on :9000.
