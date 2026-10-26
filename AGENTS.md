@@ -440,6 +440,14 @@ Non-obvious couplings found while setting it up:
 - **`/manifest.webmanifest` needs a dev-server proxy entry** in
   `client/proxy.config.json`; it is a dynamic backend route, so without the
   entry `ng serve` answers 404 and the PWA icons in the manifest never load.
+- **A dead browser session shows `400 /api/v1/users/token` plus
+  `PeerTubeReconnectError` ("you need to reconnect").** Sessions are `oAuthToken`
+  rows, and PeerTube revokes them all when a user's password/account is updated
+  (`OAuthTokenModel.deleteUserToken`); nothing purges them on restart. A preview
+  pane that signed in before such a change replays an unknown refresh token on
+  every load, so the app answers 400, drops its own tokens and asks to
+  reconnect. Signing in again is the fix — this is not an app defect. Inspect
+  with `select count(*) from "oAuthToken";` in the `postgres` service.
 - The server build runs once, sequentially, before `npm run dev`: concurrent
   `tsc`/Angular/vite builds on the bind mount have emitted truncated (0-byte)
   files and crashed the server on startup.
