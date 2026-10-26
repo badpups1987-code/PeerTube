@@ -53,8 +53,7 @@ npm run dev:embed
 ```
 
 The Angular dev server proxies `/api`, `/plugins`, `/themes`,
-`/static`, `/lazy-static`, `/socket.io`, `/client/assets` and
-`/manifest.webmanifest` to the
+`/static`, `/lazy-static`, `/socket.io`, and `/client/assets` to the
 backend at `http://127.0.0.1:9000` (see `proxy.config.json`).
 
 ### Build

@@ -31,9 +31,5 @@
   "/client/locales": {
     "target": "http://127.0.0.1:9000",
     "secure": false
-  },
-  "/manifest.webmanifest": {
-    "target": "http://127.0.0.1:9000",
-    "secure": false
   }
 }
