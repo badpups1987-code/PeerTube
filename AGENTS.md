@@ -413,3 +413,44 @@ Export to Jaeger (tracing) or Prometheus (metrics) is configurable in
   — Library / business-logic documentation
 - [SECURITY.md](SECURITY.md) — Vulnerability disclosure policy
 - [FAQ.md](FAQ.md) — Frequently asked questions
+
+## Base44 sandbox environment (`docker-compose.base44.yml`)
+
+Development-only stack that runs this repository from the cloned source
+(bind-mounted at `/app`) with local PostgreSQL/Redis and the upstream
+`npm run dev` command. Not used in production — see `support/docker/production`.
+
+```bash
+docker compose -f docker-compose.base44.yml up -d --build
+```
+
+- Entry points: `:3000` Angular dev server (`ng serve`; proxies `/api`,
+  `/socket.io`, `/static`… to the API) and `:9000` PeerTube server
+  (REST API, ActivityPub, feeds). Both are published on the host.
+- Dev credentials: `root` / `test` (see `server/core/initializers/installer.ts`).
+- No external service or credential is needed: dev config keeps SMTP disabled
+  and stores files locally.
+- `config/dev.yaml` points the DB and Redis at `127.0.0.1`, so the `app` service
+  overrides the hostnames with a `NODE_CONFIG` JSON blob (node-config merges it
+  last). Do not add a `config/local-*.json` for this: it is git-ignored and would
+  not exist on other checkouts.
+- The Angular dev server is Vite-based and refuses requests whose host is not
+  allow-listed, so the service exports
+  `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` (sandbox + preview host wildcards).
+  Removing it makes the preview return `403 Blocked request`.
+- The startup command runs `npm run build:server -- --incremental` **before**
+  `npm run dev`. Letting TypeScript emit `dist/` while `ng serve` and the vite
+  builds write to the same bind mount has produced 0-byte emitted files, which
+  makes the server die at boot with
+  `SyntaxError: The requested module './plugin-manager.js' does not provide an
+  export named …`. A clean rebuild (`npm run build:server`) repairs it.
+- pnpm keeps its store at `/app/.pnpm-store` (git-ignored) so it stays on the
+  same filesystem as `node_modules`; container restarts reinstall nothing.
+- Verify a boot: `curl -fsS localhost:3000/` (client) and
+  `curl -fsS localhost:9000/api/v1/ping` (returns `pong`).
+  `docker compose -f docker-compose.base44.yml ps` reports `healthy` only when
+  both components answer.
+- Run checks and tests inside the container (the sandbox host has no Node.js):
+  `docker compose -f docker-compose.base44.yml exec app npm run ci -- lint`.
+  The PostgreSQL user (`peertube`) is a superuser, which the API test suites need
+  to create their own databases. See the Testing Strategy section above.

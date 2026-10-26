@@ -1,0 +1,110 @@
+# Base44 sandbox environment for PeerTube.
+#
+# Development setup: the app runs from the cloned source (bind-mounted at /app)
+# with live reload, backed by local PostgreSQL and Redis services. Nothing here
+# is used in production — see support/docker/production for that.
+#
+#   docker compose -f docker-compose.base44.yml up -d --build
+#
+# Web entry points:
+#   - http://localhost:3000 : Angular dev server (`ng serve`), the preview entry
+#                             point. It proxies /api, /socket.io, /static… to the
+#                             PeerTube server on :9000 (client/proxy.config.json).
+#   - http://localhost:9000 : PeerTube Node server (REST API, ActivityPub, feeds)
+#
+# Sandbox overrides: `BASE44_PREVIEW_MODE` is provided by the platform and only
+# forwarded, never forced. When it equals "1" (sandbox preview) the app keeps its
+# upstream dev behaviour; when unset or any other value nothing changes.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: on-failure
+    environment:
+      POSTGRES_USER: peertube
+      POSTGRES_PASSWORD: peertube
+      POSTGRES_DB: peertube_dev
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./support/docker/base44/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U peertube -d peertube_dev" ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: on-failure
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  app:
+    build:
+      context: .
+      dockerfile: support/docker/base44/Dockerfile
+    restart: on-failure
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "3000:3000" # Angular dev server — preview entry point
+      - "9000:9000" # PeerTube server — REST API, ActivityPub, feeds
+    working_dir: /app
+    volumes:
+      # The repo is bind-mounted so edits are visible to both dev servers.
+      # pnpm's store intentionally stays next to node_modules (it lands in
+      # /app/.pnpm-store, git-ignored) to keep hardlinks on one filesystem.
+      - ./:/app
+    environment:
+      - BASE44_PREVIEW_MODE
+      - NODE_ENV=dev
+      # Vite-based Angular dev server (and the vite embed server) only answer
+      # requests whose host is allowlisted. The preview proxy forwards
+      # "<port>-<sandbox id>.$BASE44_SANDBOX_HOST_DOMAIN" (wildcard below) and
+      # the browser also connects to the public preview host, so both are added.
+      - '__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=.${BASE44_SANDBOX_HOST_DOMAIN},3000-${BASE44_PUBLIC_HOST_SUFFIX}'
+      # config/dev.yaml points at 127.0.0.1: node-config merges this JSON last,
+      # so the app reaches the compose services instead.
+      - 'NODE_CONFIG={"database":{"hostname":"postgres"},"redis":{"hostname":"redis"}}'
+    # Install from the current lockfile (root pnpm workspace covers client and
+    # packages), then run the upstream dev command: `ng serve` on :3000 plus the
+    # tsc-watch server build/run on :9000.
+    #
+    # The server build is done first, sequentially: TypeScript emitting `dist/`
+    # while `ng serve` and the vite builds hammer the same bind mount has left
+    # truncated (0-byte) emitted files, which makes the server crash on startup
+    # with "does not provide an export named …". `npm run dev` then reuses this
+    # build and only watches for changes.
+    command:
+      - sh
+      - -ec
+      - |
+        pnpm install --frozen-lockfile
+        npm run build:server -- --incremental
+        exec npm run dev
+    healthcheck:
+      # Both components must answer: the Angular client and the PeerTube server
+      test:
+        - CMD-SHELL
+        - |
+          curl -fsS -o /dev/null http://127.0.0.1:3000/ || { echo "frontend (:3000) is not serving"; exit 1; }
+          curl -fsS -o /dev/null http://127.0.0.1:9000/api/v1/ping || { echo "backend (:9000) is not serving"; exit 1; }
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 900s
+    labels:
+      base44.project: PeerTube
+      base44.kind: web
+      base44.port: "3000"
+
+volumes:
+  postgres-data:

@@ -3,6 +3,10 @@ node_modules
 *npm-debug.log
 *-ci.log
 
+# pnpm store, kept on the same filesystem as node_modules by pnpm itself
+# (the repo is a bind mount in the Base44 sandbox)
+/.pnpm-store/
+
 # Testing
 /test1/
 /test2/
